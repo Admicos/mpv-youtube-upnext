@@ -181,9 +181,9 @@ function download_upnext(url)
     end
 
     -- convert to invidious API call
-    url = string.gsub(url, "https://youtube%.com/watch%?v=", opts.invidious_instance .. "/api/v1/videos/")
-    url = string.gsub(url, "https://www%.youtube%.com/watch%?v=", opts.invidious_instance .. "/api/v1/videos/")
-    url = string.gsub(url, "https://youtu%.be/", opts.invidious_instance .. "/api/v1/videos/")
+    url = string.gsub(url, "https?://youtube%.com/watch%?v=", opts.invidious_instance .. "/api/v1/videos/")
+    url = string.gsub(url, "https?://www%.youtube%.com/watch%?v=", opts.invidious_instance .. "/api/v1/videos/")
+    url = string.gsub(url, "https?://youtu%.be/", opts.invidious_instance .. "/api/v1/videos/")
     msg.error(url)
 
     table.insert(command, url)
