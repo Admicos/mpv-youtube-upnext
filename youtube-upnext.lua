@@ -51,6 +51,7 @@ local opts = {
     --other
     menu_timeout = 10,
     youtube_url = "https://www.youtube.com/watch?v=%s",
+    invidious_instance = "https://invidious.snopyta.org",
     check_certificate = true,
 }
 (require 'mp.options').read_options(opts, "youtube-upnext")
@@ -129,7 +130,7 @@ function show_menu()
     mp.add_forced_key_binding(opts.select_binding, "select",    function()
         destroy()
         mp.commandv("loadfile", upnext[selected].file, "replace")
-        reload_resume()
+        --reload_resume()
     end)
     mp.add_forced_key_binding(opts.toggle_menu_binding, "escape", destroy)
 
@@ -151,7 +152,6 @@ function load_upnext()
     url = string.gsub(url, "ytdl://", "") -- Strip possible ytdl:// prefix.
 
     if string.find(url, "//youtu.be/") == nil
-    and string.find(url, "//ww.youtu.be/") == nil
     and string.find(url, "//youtube.com/") == nil
     and string.find(url, "//www.youtube.com/") == nil
     then
@@ -179,6 +179,13 @@ function download_upnext(url)
     if not opts.check_certificate then
         table.insert(command, "--no-check-certificate")
     end
+
+    -- convert to invidious API call
+    url = string.gsub(url, "https://youtube%.com/watch%?v=", opts.invidious_instance .. "/api/v1/videos/")
+    url = string.gsub(url, "https://www%.youtube%.com/watch%?v=", opts.invidious_instance .. "/api/v1/videos/")
+    url = string.gsub(url, "https://youtu%.be/", opts.invidious_instance .. "/api/v1/videos/")
+    msg.error(url)
+
     table.insert(command, url)
 
     local es, s, result = exec(command)
@@ -194,61 +201,38 @@ function download_upnext(url)
             mp.osd_message("upnext failed: error=" .. tostring(es), 10)
             msg.error("failed to get upnext list: error=%s" .. tostring(es))
         end
-        return "{}"
+        return {}
     end
 
-    local pos1 = string.find(s, "watchNextEndScreenRenderer", 1, true)
-    if pos1 == nil then
-        mp.osd_message("upnext failed, no upnext data found err01", 10)
-        msg.error("failed to find json position 01: pos1=nil")
-        return "{}"
-    end
-
-    local pos2 = string.find(s, "}}}],\\\"", pos1 + 1, true)
-    if pos2 ~= nil then
-        s = string.sub(s, pos1, pos2)
-        return "{\"" .. string.gsub(s, "\\\"", "\"") .. "}}]}}"
-    end
-
-    msg.verbose("failed to find json position 2: Trying alternative")
-    pos2 = string.find(s, "}}}]}}", pos1 + 1, true)
-
-    if pos2 ~= nil then
-        msg.verbose("Alternative found!")
-        s = string.sub(s, pos1, pos2)
-        return "{\"" .. string.gsub(s, "\\\"", "\"") .. "}}]}}]}}"
-    end
-
-    mp.osd_message("upnext failed, no upnext data found err03", 10)
-    msg.error("failed to get upnext data: pos1=" .. tostring(pos1) .. " pos2=" ..tostring(pos2))
-    return "{}"
-end
-
-function parse_upnext(json_str, url)
-    if json_str == "{}" then
-      return {}, 0
-    end
-
-    local data, err = utils.parse_json(json_str)
-
+    local data, err = utils.parse_json(s)
     if data == nil then
-        mp.osd_message("upnext failed: JSON decode failed", 10)
+        mp.osd_message("upnext fetch failed: JSON decode failed", 10)
         msg.error("parse_json failed: " .. err)
         return {}, 0
     end
 
+    if data.recommendedVideos then
+        return data.recommendedVideos
+    elseif data.error then
+        mp.osd_message("upnext fetch failed: Invidious: " .. data.error, 10)
+        msg.error("Invidious error: " .. data.error)
+    else
+        mp.osd_message("upnext: No recommended videos!", 10)
+        msg.error("No recommended videos!")
+    end
+
+    return {}
+end
+
+function parse_upnext(data, url)
     local res = {}
     msg.verbose("wget and json decode succeeded!")
-    for i, v in ipairs(data.watchNextEndScreenRenderer.results) do
-        if v.endScreenVideoRenderer ~= nil and v.endScreenVideoRenderer.title ~= nil and v.endScreenVideoRenderer.title.simpleText ~= nil then
-            local title = v.endScreenVideoRenderer.title.simpleText
-            local video_id = v.endScreenVideoRenderer.videoId
-            table.insert(res, {
+    for i, v in ipairs(data) do
+        table.insert(res, {
                 index=i,
-                label=title,
-                file=string.format(opts.youtube_url, video_id)
+                label=v.title .. " - " .. v.author,
+                file=string.format(opts.youtube_url, v.videoId)
             })
-        end
     end
 
     table.sort(res, function(a, b) return a.index < b.index end)
